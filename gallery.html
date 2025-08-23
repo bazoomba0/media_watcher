@@ -267,6 +267,9 @@
             let trashedFiles = [];
             let currentView = 'gallery'; // 'gallery' or 'trash'
             let masonry, trashMasonry;
+            let loadedMediaCount = 0;
+            const filesPerLoad = 50; // Load 50 images at a time
+            let isLoading = false;
 
             // DOM Elements
             const ipcRenderer = require('electron').ipcRenderer;
@@ -321,24 +324,61 @@
                 allFiles = filePaths
                     .filter(filePath => supportedExtensions.some(ext => filePath.toLowerCase().endsWith(ext)))
                     .map(filePath => ({
-                        id: filePath, // Use the full path as the unique ID
-                        url: 'file://' + filePath // Create a file URL for local access
+                        id: filePath,
+                        url: 'file://' + filePath
                     }));
 
                 visibleFiles = [...allFiles];
                 trashedFiles = [];
 
-                showGalleryView();
+                // Reset and render the main gallery with the first batch
+                setupAndRenderGrid(mainGrid, visibleFiles, false);
             }
 
-            function renderGrid(files, container, isTrash) {
-                container.innerHTML = '';
+            function setupAndRenderGrid(container, files, isTrash) {
+                container.innerHTML = ''; // Clear previous content
+
+                const msnryInstance = isTrash ? trashMasonry : masonry;
+                if (msnryInstance) msnryInstance.destroy();
+
                 if (files.length === 0) {
                     container.innerHTML = `<div class="error">${isTrash ? 'Trash is empty.' : 'No media to display.'}</div>`;
                     return;
                 }
 
-                const elements = files.map(fileObj => {
+                const newMsnry = new Masonry(container, {
+                    itemSelector: '.grid-item',
+                    columnWidth: parseInt(thumbnailWidthSlider.value),
+                    gutter: 10,
+                    fitWidth: true
+                });
+
+                if (isTrash) {
+                    trashMasonry = newMsnry;
+                    // Trash is not loaded via infinite scroll, so render all at once
+                    appendMediaToGrid(files, container, newMsnry, isTrash);
+                } else {
+                    masonry = newMsnry;
+                    loadedMediaCount = 0;
+                    loadMoreMedia(); // Load the first batch for the main gallery
+                }
+            }
+
+            function loadMoreMedia() {
+                if (isLoading) return;
+                isLoading = true;
+
+                const filesToLoad = visibleFiles.slice(loadedMediaCount, loadedMediaCount + filesPerLoad);
+                if (filesToLoad.length > 0) {
+                    appendMediaToGrid(filesToLoad, mainGrid, masonry, false);
+                    loadedMediaCount += filesToLoad.length;
+                }
+
+                isLoading = false;
+            }
+
+            function appendMediaToGrid(files, container, msnry, isTrash) {
+                 const elements = files.map(fileObj => {
                     const gridItem = document.createElement('div');
                     gridItem.classList.add('grid-item');
                     gridItem.style.width = `${thumbnailWidthSlider.value}px`;
@@ -373,21 +413,10 @@
                 });
 
                 container.append(...elements);
-
-                const msnry = isTrash ? trashMasonry : masonry;
-                if (msnry) msnry.destroy();
-
-                const newMsnry = new Masonry(container, {
-                    itemSelector: '.grid-item',
-                    columnWidth: parseInt(thumbnailWidthSlider.value),
-                    gutter: 10,
-                    fitWidth: true
+                imagesLoaded(container, () => {
+                    msnry.appended(elements);
+                    msnry.layout();
                 });
-
-                imagesLoaded(container, () => newMsnry.layout());
-
-                if(isTrash) trashMasonry = newMsnry;
-                else masonry = newMsnry;
             }
 
             function createMediaElement(fileObj) {
@@ -414,7 +443,8 @@
                 if (index > -1) {
                     const [fileToTrash] = visibleFiles.splice(index, 1);
                     trashedFiles.push(fileToTrash);
-                    renderGrid(visibleFiles, mainGrid, false);
+                    // Re-render the entire grid to reflect the change
+                    setupAndRenderGrid(mainGrid, visibleFiles, false);
                     updateTrashButton();
                 }
             }
@@ -424,7 +454,9 @@
                 if (index > -1) {
                     const [fileToRestore] = trashedFiles.splice(index, 1);
                     visibleFiles.push(fileToRestore);
-                    renderGrid(trashedFiles, trashGrid, true);
+                    // Re-render both grids
+                    setupAndRenderGrid(trashGrid, trashedFiles, true);
+                    setupAndRenderGrid(mainGrid, visibleFiles, false);
                     updateTrashButton();
                 }
             }
@@ -439,7 +471,7 @@
                 trashView.classList.add('hidden');
                 viewTrashBtn.classList.remove('hidden');
                 backToGalleryBtn.classList.add('hidden');
-                renderGrid(visibleFiles, mainGrid, false);
+                setupAndRenderGrid(mainGrid, visibleFiles, false);
             }
 
             function showTrashView() {
@@ -448,7 +480,7 @@
                 trashView.classList.remove('hidden');
                 viewTrashBtn.classList.add('hidden');
                 backToGalleryBtn.classList.remove('hidden');
-                renderGrid(trashedFiles, trashGrid, true);
+                setupAndRenderGrid(trashGrid, trashedFiles, true);
             }
 
             async function deleteTrashedFiles() {
@@ -565,6 +597,15 @@
             }
 
             // --- Global Keyboard Shortcuts ---
+            // Infinite scroll listener
+            window.addEventListener('scroll', () => {
+                if (currentView === 'gallery' && !isLoading) {
+                    if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500) {
+                        loadMoreMedia();
+                    }
+                }
+            });
+
             document.addEventListener('keydown', (event) => {
                 if (fullscreenOverlay.classList.contains('visible')) {
                     // Fullscreen-only shortcuts

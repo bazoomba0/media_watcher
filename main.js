@@ -22,22 +22,30 @@ function createWindow() {
 
 // --- IPC Handlers for File System Access ---
 
-// Recursively get all file paths from a directory
-function getAllFiles(dirPath, arrayOfFiles) {
-  const files = fs.readdirSync(dirPath);
+// Asynchronously and recursively get all file paths from a directory
+async function getAllFiles(dirPath, arrayOfFiles = []) {
+    try {
+        const files = await fs.promises.readdir(dirPath);
 
-  arrayOfFiles = arrayOfFiles || [];
-
-  files.forEach(function (file) {
-    if (fs.statSync(path.join(dirPath, file)).isDirectory()) {
-      arrayOfFiles = getAllFiles(path.join(dirPath, file), arrayOfFiles);
-    } else {
-      arrayOfFiles.push(path.join(dirPath, file));
+        for (const file of files) {
+            const fullPath = path.join(dirPath, file);
+            try {
+                const stats = await fs.promises.stat(fullPath);
+                if (stats.isDirectory()) {
+                    await getAllFiles(fullPath, arrayOfFiles);
+                } else {
+                    arrayOfFiles.push(fullPath);
+                }
+            } catch (err) {
+                console.error(`Could not stat file ${fullPath}: ${err}`);
+            }
+        }
+    } catch (err) {
+        console.error(`Could not read directory ${dirPath}: ${err}`);
     }
-  });
-
-  return arrayOfFiles;
+    return arrayOfFiles;
 }
+
 
 ipcMain.handle('open-folder-dialog', async (event) => {
   const { canceled, filePaths } = await dialog.showOpenDialog({
@@ -49,7 +57,7 @@ ipcMain.handle('open-folder-dialog', async (event) => {
   }
 
   const folderPath = filePaths[0];
-  const files = getAllFiles(folderPath);
+  const files = await getAllFiles(folderPath);
   return files;
 });
 
