@@ -344,16 +344,14 @@
                 unsupportedContainer.innerHTML = '';
 
                 const filePaths = await ipcRenderer.invoke('open-folder-dialog');
-
                 if (filePaths.length === 0) {
-                    mainGrid.innerHTML = '<div class="error">No folder selected or folder is empty.</div>';
+                    mainGrid.innerHTML = '<div class="grid-sizer"></div><div class="error">No folder selected.</div>';
                     loadingIndicator.classList.add('hidden');
                     return;
                 }
 
                 const supportedFiles = [];
                 const unsupportedFiles = [];
-
                 filePaths.forEach(path => {
                     const extension = (path.split('.').pop() || '').toLowerCase();
                     if (supportedExtensions.includes(`.${extension}`)) {
@@ -369,23 +367,18 @@
                     unsupportedContainer.classList.remove('hidden');
                 }
 
-                allFiles = supportedFiles.map(filePath => ({
-                    id: filePath,
-                    url: 'file://' + filePath
-                }));
-
+                allFiles = supportedFiles.map(filePath => ({ id: filePath, url: 'file://' + filePath }));
                 visibleFiles = [...allFiles];
                 trashedFiles = [];
 
-                setupAndRenderGrid(mainGrid, visibleFiles, false);
+                initializeGrid(mainGrid, visibleFiles, false);
             }
 
-            function setupAndRenderGrid(container, files, isTrash) {
-                // Add a grid-sizer element for Masonry
+            function initializeGrid(container, files, isTrash) {
                 container.innerHTML = '<div class="grid-sizer"></div>';
 
-                const msnryInstance = isTrash ? trashMasonry : masonry;
-                if (msnryInstance) msnryInstance.destroy();
+                let msnry = isTrash ? trashMasonry : masonry;
+                if (msnry) msnry.destroy();
 
                 if (files.length === 0) {
                     container.innerHTML += `<div class="error">${isTrash ? 'Trash is empty.' : 'No media to display.'}</div>`;
@@ -393,7 +386,7 @@
                     return;
                 }
 
-                const newMsnry = new Masonry(container, {
+                msnry = new Masonry(container, {
                     itemSelector: '.grid-item',
                     columnWidth: '.grid-sizer',
                     gutter: 10,
@@ -401,28 +394,26 @@
                 });
 
                 if (isTrash) {
-                    trashMasonry = newMsnry;
-                    appendMediaToGrid(files, container, newMsnry, isTrash);
+                    trashMasonry = msnry;
+                    appendMediaToGrid(files, container, trashMasonry, true);
                 } else {
-                    masonry = newMsnry;
+                    masonry = msnry;
                     loadedMediaCount = 0;
                     loadMoreMedia();
                 }
             }
 
             function loadMoreMedia() {
-                if (isLoading || loadedMediaCount >= visibleFiles.length) {
-                    loadingIndicator.classList.add('hidden');
-                    return;
-                };
+                if (isLoading || loadedMediaCount >= visibleFiles.length) return;
                 isLoading = true;
+                loadingIndicator.classList.remove('hidden');
 
                 const filesToLoad = visibleFiles.slice(loadedMediaCount, loadedMediaCount + filesPerLoad);
                 if (filesToLoad.length > 0) {
                     appendMediaToGrid(filesToLoad, mainGrid, masonry, false);
                     loadedMediaCount += filesToLoad.length;
                 } else {
-                    isLoading = false;
+                    isLoading = false; // No more files to load
                     loadingIndicator.classList.add('hidden');
                 }
             }
@@ -464,12 +455,15 @@
 
                 container.append(...elements);
 
-                const imgLoader = imagesLoaded(container);
-                imgLoader.on('progress', () => msnry.layout());
+                const imgLoader = imagesLoaded(elements);
                 imgLoader.on('always', () => {
+                    msnry.appended(elements);
                     msnry.layout();
                     isLoading = false;
-                    loadingIndicator.classList.add('hidden');
+                    // Only hide loading indicator after the very first batch
+                    if (loadedMediaCount <= filesPerLoad) {
+                        loadingIndicator.classList.add('hidden');
+                    }
                 });
             }
 
@@ -497,8 +491,7 @@
                 if (index > -1) {
                     const [fileToTrash] = visibleFiles.splice(index, 1);
                     trashedFiles.push(fileToTrash);
-                    // Re-render the entire grid to reflect the change
-                    setupAndRenderGrid(mainGrid, visibleFiles, false);
+                    initializeGrid(mainGrid, visibleFiles, false);
                     updateTrashButton();
                 }
             }
@@ -508,9 +501,7 @@
                 if (index > -1) {
                     const [fileToRestore] = trashedFiles.splice(index, 1);
                     visibleFiles.push(fileToRestore);
-                    // Re-render both grids
-                    setupAndRenderGrid(trashGrid, trashedFiles, true);
-                    setupAndRenderGrid(mainGrid, visibleFiles, false);
+                    initializeGrid(trashGrid, trashedFiles, true);
                     updateTrashButton();
                 }
             }
@@ -525,7 +516,7 @@
                 trashView.classList.add('hidden');
                 viewTrashBtn.classList.remove('hidden');
                 backToGalleryBtn.classList.add('hidden');
-                setupAndRenderGrid(mainGrid, visibleFiles, false);
+                initializeGrid(mainGrid, visibleFiles, false);
             }
 
             function showTrashView() {
@@ -534,7 +525,7 @@
                 trashView.classList.remove('hidden');
                 viewTrashBtn.classList.add('hidden');
                 backToGalleryBtn.classList.remove('hidden');
-                setupAndRenderGrid(trashGrid, trashedFiles, true);
+                initializeGrid(trashGrid, trashedFiles, true);
             }
 
             async function deleteTrashedFiles() {
