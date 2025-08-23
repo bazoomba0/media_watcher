@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -76,6 +76,10 @@ ipcMain.handle('delete-files', async (event, filePaths) => {
         }
     }
     return { success: false, error: 'Deletion cancelled by user.' };
+});
+
+ipcMain.on('show-in-explorer', (event, filePath) => {
+    shell.showItemInFolder(filePath);
 });
 
 

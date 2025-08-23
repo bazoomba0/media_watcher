@@ -41,6 +41,10 @@
             background-color: #e9e9e9;
         }
 
+        .grid {
+            margin: 10px auto;
+        }
+
         .grid-item {
             width: 250px;
             margin-bottom: 10px;
@@ -287,7 +291,7 @@
             const mediaInfo = document.getElementById('mediaInfo');
             const fullscreenDeleteBtn = document.getElementById('fullscreenDeleteBtn');
 
-            const supportedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.mp4', '.webm', '.ogg'];
+            const supportedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.mp4', '.webm', '.ogg', '.mov'];
 
             // --- Event Listeners ---
 
@@ -390,7 +394,7 @@
                 const lowerFileName = fileObj.id.toLowerCase();
                 let mediaElement;
 
-                if (supportedExtensions.some(ext => ['.mp4', '.webm', '.ogg', '.mov'].includes(ext) && lowerFileName.endsWith(ext))) {
+                if (['.mp4', '.webm', '.ogg', '.mov'].some(ext => lowerFileName.endsWith(ext))) {
                     mediaElement = document.createElement('video');
                     mediaElement.autoplay = true;
                     mediaElement.muted = true;
@@ -481,7 +485,7 @@
                 currentMediaList = (currentView === 'trash') ? trashedFiles : visibleFiles;
                 currentMediaIndex = currentMediaList.findIndex(f => f.id === fileObj.id);
 
-                const isVideo = supportedExtensions.some(ext => ['.mp4', '.webm', '.ogg', '.mov'].includes(ext) && fileObj.id.toLowerCase().endsWith(ext));
+                const isVideo = ['.mp4', '.webm', '.ogg', '.mov'].some(ext => fileObj.id.toLowerCase().endsWith(ext));
 
                 fullscreenContent.innerHTML = '';
                 const mediaElement = createMediaElement(fileObj);
@@ -559,6 +563,38 @@
                 fullscreenContent.innerHTML = '';
                 currentMediaId = null;
             }
+
+            // --- Global Keyboard Shortcuts ---
+            document.addEventListener('keydown', (event) => {
+                if (fullscreenOverlay.classList.contains('visible')) {
+                    // Fullscreen-only shortcuts
+                    switch(event.key) {
+                        case 'Escape':
+                            closeFullscreen();
+                            break;
+                        case 'ArrowLeft':
+                            navigateFullscreen(-1);
+                            break;
+                        case 'ArrowRight':
+                            navigateFullscreen(1);
+                            break;
+                        case 'i':
+                        case 'I':
+                            if (currentMediaId) {
+                                ipcRenderer.send('show-in-explorer', currentMediaId);
+                            }
+                            break;
+                    }
+                } else {
+                    // Global shortcuts
+                    switch(event.key) {
+                        case 'm':
+                        case 'M':
+                            loadMediaFromPicker();
+                            break;
+                    }
+                }
+            });
         });
     </script>
 </body>
