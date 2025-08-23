@@ -216,9 +216,7 @@
 </head>
 <body>
     <div class="controls">
-        <label for="folderPicker" id="folderPickerLabel">Select Media Folder</label>
-        <input type="file" id="folderPicker" webkitdirectory multiple class="hidden">
-        <button id="loadMediaBtn">Load Media</button>
+        <button id="folderPickerLabel">Select Media Folder</button>
         <button id="viewTrashBtn">View Trash (0)</button>
         <button id="backToGalleryBtn" class="hidden">Back to Gallery</button>
         <div>
@@ -238,8 +236,8 @@
     <div class="trash-view hidden">
         <h2>Trash</h2>
         <div class="trash-controls">
-            <button id="generateDeleteScriptBtn">Generate Delete Script</button>
-            <textarea id="delete-script-output" readonly placeholder="Your delete script will appear here..."></textarea>
+            <button id="permanentlyDeleteBtn">Permanently Delete Trashed Files</button>
+            <p id="delete-status" class="hidden"></p>
         </div>
         <div class="grid" id="trashGrid"></div>
     </div>
@@ -267,9 +265,8 @@
             let masonry, trashMasonry;
 
             // DOM Elements
-            const folderPicker = document.getElementById('folderPicker');
-            const folderPickerLabel = document.getElementById('folderPickerLabel');
-            const loadMediaBtn = document.getElementById('loadMediaBtn');
+            const ipcRenderer = require('electron').ipcRenderer;
+            const folderPickerBtn = document.getElementById('folderPickerLabel'); // Re-purposing the label as the button
             const viewTrashBtn = document.getElementById('viewTrashBtn');
             const backToGalleryBtn = document.getElementById('backToGalleryBtn');
             const thumbnailWidthSlider = document.getElementById('thumbnailWidth');
@@ -294,11 +291,10 @@
 
             // --- Event Listeners ---
 
-            folderPickerLabel.addEventListener('click', () => folderPicker.click());
-            loadMediaBtn.addEventListener('click', loadMediaFromPicker);
+            folderPickerBtn.addEventListener('click', loadMediaFromPicker);
             viewTrashBtn.addEventListener('click', showTrashView);
             backToGalleryBtn.addEventListener('click', showGalleryView);
-            generateDeleteScriptBtn.addEventListener('click', generateDeleteScript);
+            document.getElementById('permanentlyDeleteBtn').addEventListener('click', deleteTrashedFiles);
 
             thumbnailWidthSlider.addEventListener('input', () => {
                 const newWidth = `${thumbnailWidthSlider.value}px`;
@@ -311,19 +307,18 @@
 
             // --- Core Functions ---
 
-            function loadMediaFromPicker() {
-                const files = folderPicker.files;
-                if (files.length === 0) {
+            async function loadMediaFromPicker() {
+                const filePaths = await ipcRenderer.invoke('open-folder-dialog');
+                if (filePaths.length === 0) {
                     mainGrid.innerHTML = '<div class="error">No folder selected or folder is empty.</div>';
                     return;
                 }
 
-                allFiles = Array.from(files)
-                    .filter(file => supportedExtensions.some(ext => file.name.toLowerCase().endsWith(ext)))
-                    .map(file => ({
-                        file,
-                        id: file.webkitRelativePath || file.name,
-                        url: URL.createObjectURL(file)
+                allFiles = filePaths
+                    .filter(filePath => supportedExtensions.some(ext => filePath.toLowerCase().endsWith(ext)))
+                    .map(filePath => ({
+                        id: filePath, // Use the full path as the unique ID
+                        url: 'file://' + filePath // Create a file URL for local access
                     }));
 
                 visibleFiles = [...allFiles];
@@ -392,10 +387,10 @@
             }
 
             function createMediaElement(fileObj) {
-                const lowerFileName = fileObj.file.name.toLowerCase();
+                const lowerFileName = fileObj.id.toLowerCase();
                 let mediaElement;
 
-                if (supportedExtensions.some(ext => ['.mp4', '.webm', '.ogg'].includes(ext) && lowerFileName.endsWith(ext))) {
+                if (supportedExtensions.some(ext => ['.mp4', '.webm', '.ogg', '.mov'].includes(ext) && lowerFileName.endsWith(ext))) {
                     mediaElement = document.createElement('video');
                     mediaElement.autoplay = true;
                     mediaElement.muted = true;
@@ -452,23 +447,41 @@
                 renderGrid(trashedFiles, trashGrid, true);
             }
 
-            function generateDeleteScript() {
+            async function deleteTrashedFiles() {
                 if (trashedFiles.length === 0) {
-                    deleteScriptOutput.value = "No files in trash to delete.";
+                    alert("Trash is empty.");
                     return;
                 }
-                const isWindows = navigator.platform.toLowerCase().includes('win');
-                const command = isWindows ? 'del' : 'rm';
-                const script = trashedFiles.map(f => `${command} "${f.id}"`).join('\n');
-                deleteScriptOutput.value = script;
+
+                const filePaths = trashedFiles.map(f => f.id);
+                const result = await ipcRenderer.invoke('delete-files', filePaths);
+
+                const deleteStatus = document.getElementById('delete-status');
+                if (result.success) {
+                    deleteStatus.textContent = `Successfully deleted ${result.deletedCount} files.`;
+                    deleteStatus.style.color = 'green';
+                    trashedFiles = [];
+                    renderGrid(trashedFiles, trashGrid, true);
+                    updateTrashButton();
+                } else {
+                    deleteStatus.textContent = `Error deleting files: ${result.error}`;
+                    deleteStatus.style.color = 'red';
+                }
+                deleteStatus.classList.remove('hidden');
+                setTimeout(() => deleteStatus.classList.add('hidden'), 5000);
             }
 
             // --- Fullscreen Logic ---
             let currentMediaId = null;
+            let currentMediaIndex = -1;
+            let currentMediaList = [];
 
             function openFullscreen(fileObj) {
                 currentMediaId = fileObj.id;
-                const isVideo = fileObj.file.type.startsWith('video/');
+                currentMediaList = (currentView === 'trash') ? trashedFiles : visibleFiles;
+                currentMediaIndex = currentMediaList.findIndex(f => f.id === fileObj.id);
+
+                const isVideo = supportedExtensions.some(ext => ['.mp4', '.webm', '.ogg', '.mov'].includes(ext) && fileObj.id.toLowerCase().endsWith(ext));
 
                 fullscreenContent.innerHTML = '';
                 const mediaElement = createMediaElement(fileObj);
@@ -480,6 +493,7 @@
                 fullscreenContent.appendChild(mediaElement);
 
                 updateFullscreenDeleteIcon();
+                updateNavigationState();
                 fullscreenOverlay.classList.add('visible');
 
                 if (autoTrashCheckbox.checked) {
@@ -516,9 +530,29 @@
             });
 
             closeFullscreenBtn.addEventListener('click', closeFullscreen);
+            prevBtn.addEventListener('click', () => navigateFullscreen(-1));
+            nextBtn.addEventListener('click', () => navigateFullscreen(1));
+
             fullscreenOverlay.addEventListener('click', (e) => {
                 if (e.target === fullscreenOverlay) closeFullscreen();
             });
+
+            function navigateFullscreen(direction) {
+                const newIndex = currentMediaIndex + direction;
+                if (newIndex >= 0 && newIndex < currentMediaList.length) {
+                    openFullscreen(currentMediaList[newIndex]);
+                }
+            }
+
+            function updateNavigationState() {
+                prevBtn.disabled = currentMediaIndex <= 0;
+                nextBtn.disabled = currentMediaIndex >= currentMediaList.length - 1;
+
+                const fileObj = currentMediaList[currentMediaIndex];
+                if (fileObj) {
+                    mediaInfo.textContent = `${currentMediaIndex + 1} / ${currentMediaList.length} - ${fileObj.id}`;
+                }
+            }
 
             function closeFullscreen() {
                 fullscreenOverlay.classList.remove('visible');
