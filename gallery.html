@@ -101,11 +101,30 @@
             margin-bottom: 20px;
         }
 
-        #delete-script-output {
-            width: 80%;
-            height: 200px;
-            margin-top: 10px;
-            font-family: monospace;
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: #d32f2f;
+            font-size: 16px;
+        }
+
+        #loadingIndicator {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 20px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            z-index: 2000;
+        }
+
+        #unsupported-files-container {
+            padding: 10px 20px;
+            background: #fffbe6;
+            border-bottom: 1px solid #ffe58f;
         }
 
         /* Fullscreen Overlay */
@@ -209,32 +228,6 @@
             z-index: 1002;
             pointer-events: none;
         }
-
-        .error {
-            text-align: center;
-            padding: 40px;
-            color: #d32f2f;
-            font-size: 16px;
-        }
-
-        #loadingIndicator {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 20px;
-            background: rgba(0,0,0,0.7);
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            z-index: 2000;
-        }
-
-        #unsupported-files-container {
-            padding: 10px 20px;
-            background: #fffbe6;
-            border-bottom: 1px solid #ffe58f;
-        }
     </style>
 </head>
 <body>
@@ -291,9 +284,6 @@
             let trashedFiles = [];
             let currentView = 'gallery'; // 'gallery' or 'trash'
             let masonry, trashMasonry;
-            let loadedMediaCount = 0;
-            const filesPerLoad = 50; // Load 50 images at a time
-            let isLoading = false;
 
             // DOM Elements
             const ipcRenderer = require('electron').ipcRenderer;
@@ -321,7 +311,6 @@
             const supportedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.mp4', '.webm', '.ogg'];
 
             // --- Event Listeners ---
-
             folderPickerBtn.addEventListener('click', loadMediaFromPicker);
             viewTrashBtn.addEventListener('click', showTrashView);
             backToGalleryBtn.addEventListener('click', showGalleryView);
@@ -337,7 +326,6 @@
             });
 
             // --- Core Functions ---
-
             async function loadMediaFromPicker() {
                 loadingIndicator.classList.remove('hidden');
                 unsupportedContainer.classList.add('hidden');
@@ -371,10 +359,10 @@
                 visibleFiles = [...allFiles];
                 trashedFiles = [];
 
-                initializeGrid(mainGrid, visibleFiles, false);
+                renderGrid(mainGrid, visibleFiles, false);
             }
 
-            function initializeGrid(container, files, isTrash) {
+            function renderGrid(container, files, isTrash) {
                 container.innerHTML = '<div class="grid-sizer"></div>';
 
                 let msnry = isTrash ? trashMasonry : masonry;
@@ -386,40 +374,7 @@
                     return;
                 }
 
-                msnry = new Masonry(container, {
-                    itemSelector: '.grid-item',
-                    columnWidth: '.grid-sizer',
-                    gutter: 10,
-                    percentPosition: true,
-                });
-
-                if (isTrash) {
-                    trashMasonry = msnry;
-                    appendMediaToGrid(files, container, trashMasonry, true);
-                } else {
-                    masonry = msnry;
-                    loadedMediaCount = 0;
-                    loadMoreMedia();
-                }
-            }
-
-            function loadMoreMedia() {
-                if (isLoading || loadedMediaCount >= visibleFiles.length) return;
-                isLoading = true;
-                loadingIndicator.classList.remove('hidden');
-
-                const filesToLoad = visibleFiles.slice(loadedMediaCount, loadedMediaCount + filesPerLoad);
-                if (filesToLoad.length > 0) {
-                    appendMediaToGrid(filesToLoad, mainGrid, masonry, false);
-                    loadedMediaCount += filesToLoad.length;
-                } else {
-                    isLoading = false; // No more files to load
-                    loadingIndicator.classList.add('hidden');
-                }
-            }
-
-            function appendMediaToGrid(files, container, msnry, isTrash) {
-                 const elements = files.map(fileObj => {
+                const elements = files.map(fileObj => {
                     const gridItem = document.createElement('div');
                     gridItem.classList.add('grid-item');
                     gridItem.style.width = `${thumbnailWidthSlider.value}px`;
@@ -455,23 +410,31 @@
 
                 container.append(...elements);
 
-                const imgLoader = imagesLoaded(elements);
-                imgLoader.on('always', () => {
-                    msnry.appended(elements);
-                    msnry.layout();
-                    isLoading = false;
-                    // Only hide loading indicator after the very first batch
-                    if (loadedMediaCount <= filesPerLoad) {
-                        loadingIndicator.classList.add('hidden');
-                    }
+                msnry = new Masonry(container, {
+                    itemSelector: '.grid-item',
+                    columnWidth: '.grid-sizer',
+                    gutter: 10,
+                    percentPosition: true,
                 });
+
+                imagesLoaded(container).on('progress', function() {
+                    msnry.layout();
+                }).on('always', function() {
+                    loadingIndicator.classList.add('hidden');
+                });
+
+                if (isTrash) {
+                    trashMasonry = msnry;
+                } else {
+                    masonry = msnry;
+                }
             }
 
             function createMediaElement(fileObj) {
                 const lowerFileName = fileObj.id.toLowerCase();
                 let mediaElement;
 
-                if (['.mp4', '.webm', '.ogg', '.mov'].some(ext => lowerFileName.endsWith(ext))) {
+                if (['.mp4', '.webm', '.ogg'].some(ext => lowerFileName.endsWith(ext))) {
                     mediaElement = document.createElement('video');
                     mediaElement.autoplay = true;
                     mediaElement.muted = true;
@@ -491,7 +454,7 @@
                 if (index > -1) {
                     const [fileToTrash] = visibleFiles.splice(index, 1);
                     trashedFiles.push(fileToTrash);
-                    initializeGrid(mainGrid, visibleFiles, false);
+                    renderGrid(mainGrid, visibleFiles, false);
                     updateTrashButton();
                 }
             }
@@ -501,7 +464,7 @@
                 if (index > -1) {
                     const [fileToRestore] = trashedFiles.splice(index, 1);
                     visibleFiles.push(fileToRestore);
-                    initializeGrid(trashGrid, trashedFiles, true);
+                    renderGrid(trashGrid, trashedFiles, true);
                     updateTrashButton();
                 }
             }
@@ -516,7 +479,7 @@
                 trashView.classList.add('hidden');
                 viewTrashBtn.classList.remove('hidden');
                 backToGalleryBtn.classList.add('hidden');
-                initializeGrid(mainGrid, visibleFiles, false);
+                renderGrid(mainGrid, visibleFiles, false);
             }
 
             function showTrashView() {
@@ -524,8 +487,8 @@
                 mainGrid.classList.add('hidden');
                 trashView.classList.remove('hidden');
                 viewTrashBtn.classList.add('hidden');
-                backToGalleryBtn.classList.remove('hidden');
-                initializeGrid(trashGrid, trashedFiles, true);
+                backToGalleryBtn.classList.add('hidden');
+                renderGrid(trashGrid, trashedFiles, true);
             }
 
             async function deleteTrashedFiles() {
@@ -542,7 +505,7 @@
                     deleteStatus.textContent = `Successfully deleted ${result.deletedCount} files.`;
                     deleteStatus.style.color = 'green';
                     trashedFiles = [];
-                    renderGrid(trashedFiles, trashGrid, true);
+                    renderGrid(trashGrid, trashedFiles, true);
                     updateTrashButton();
                 } else {
                     deleteStatus.textContent = `Error deleting files: ${result.error}`;
@@ -562,7 +525,7 @@
                 currentMediaList = (currentView === 'trash') ? trashedFiles : visibleFiles;
                 currentMediaIndex = currentMediaList.findIndex(f => f.id === fileObj.id);
 
-                const isVideo = ['.mp4', '.webm', '.ogg', '.mov'].some(ext => fileObj.id.toLowerCase().endsWith(ext));
+                const isVideo = ['.mp4', '.webm', '.ogg'].some(ext => fileObj.id.toLowerCase().endsWith(ext));
 
                 fullscreenContent.innerHTML = '';
                 const mediaElement = createMediaElement(fileObj);
@@ -578,9 +541,7 @@
                 fullscreenOverlay.classList.add('visible');
 
                 if (autoTrashCheckbox.checked) {
-                    // Use a timeout to ensure the user sees the image before it's gone
                     setTimeout(() => {
-                        // Check if the file is still visible before trashing
                         if (visibleFiles.some(f => f.id === fileObj.id)) {
                             markForDeletion(fileObj.id);
                         }
@@ -642,15 +603,6 @@
             }
 
             // --- Global Keyboard Shortcuts ---
-            // Infinite scroll listener
-            window.addEventListener('scroll', () => {
-                if (currentView === 'gallery' && !isLoading) {
-                    if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500) {
-                        loadMoreMedia();
-                    }
-                }
-            });
-
             document.addEventListener('keydown', (event) => {
                 if (fullscreenOverlay.classList.contains('visible')) {
                     // Fullscreen-only shortcuts
