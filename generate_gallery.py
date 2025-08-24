@@ -45,12 +45,12 @@ def generate_gallery():
     print(f"Found {len(media_files)} media files.")
 
     # 3. Read the template file
-    template_path = 'gallery.html'
+    template_path = 'gallery_template.html'
     try:
         with open(template_path, 'r', encoding='utf-8') as f:
             template_content = f.read()
     except FileNotFoundError:
-        print(f"Error: Template file '{template_path}' not found.")
+        print(f"Error: Template file '{template_path}' not found. Make sure it's in the same directory.")
         sys.exit(1)
 
     # 4. Generate JavaScript data arrays
@@ -85,12 +85,14 @@ def generate_gallery():
         flags=re.DOTALL
     )
 
-    # 6. Write the new content to gallery.html
+    # 6. Write the new content to a new file
+    folder_name = os.path.basename(folder_path)
+    output_filename = f"gallery-{folder_name}.html"
     try:
-        with open(template_path, 'w', encoding='utf-8') as f:
+        with open(output_filename, 'w', encoding='utf-8') as f:
             f.write(final_content)
-        print(f"Successfully generated '{template_path}'!")
-        print("You can now open the gallery.html file in your browser.")
+        print(f"\nSuccessfully generated '{output_filename}'!")
+        print("You can now open that file in your browser.")
     except IOError as e:
         print(f"Error writing to file: {e}")
         sys.exit(1)

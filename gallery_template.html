@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Media Gallery</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; background-color: #f0f0f0; color: #333; }
+        .hidden { display: none !important; }
+        .controls { padding: 15px; background-color: #fff; border-bottom: 1px solid #ddd; text-align: center; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 20px; }
+        .controls button, .controls label { padding: 8px 15px; border-radius: 5px; border: 1px solid #ccc; background-color: #f7f7f7; cursor: pointer; font-size: 14px; }
+        .controls button:hover { background-color: #e9e9e9; }
+        .grid { margin: 10px auto; }
+        .grid-item { margin-bottom: 10px; box-sizing: border-box; background-color: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative; }
+        .grid-item:hover .action-icon { opacity: 1; }
+        .grid-item img, .grid-item video { display: block; width: 100%; height: auto; border-radius: 8px; cursor: pointer; }
+        .action-icon { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; background-color: rgba(0,0,0,0.6); color: white; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 18px; cursor: pointer; opacity: 0; transition: opacity 0.2s ease; z-index: 10; }
+        .action-icon:hover { background-color: rgba(0,0,0,0.8); }
+        .trash-view { padding: 20px; text-align: center; }
+        .trash-controls { margin-bottom: 20px; }
+        #delete-script-output { width: 80%; height: 150px; margin-top: 10px; font-family: monospace; }
+        #undo-container { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 15px; border-radius: 5px; z-index: 2000; }
+        .fullscreen-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0,0,0,0.95); display: flex; justify-content: center; align-items: center; z-index: 1000; opacity: 0; visibility: hidden; transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out; }
+        .fullscreen-overlay.visible { opacity: 1; visibility: visible; }
+        .fullscreen-content { position: relative; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box; }
+        .fullscreen-content img, .fullscreen-content video { max-width: calc(100vw - 20px); max-height: calc(100vh - 20px); object-fit: contain; border-radius: 4px; }
+        .nav-btn { position: absolute; top: 50%; transform: translateY(-50%); background-color: rgba(255,255,255,0.9); border: none; width: 50px; height: 50px; border-radius: 50%; cursor: pointer; font-size: 20px; font-weight: bold; color: #333; display: flex; justify-content: center; align-items: center; transition: all 0.2s ease; z-index: 1002; }
+        .nav-btn:hover { background-color: white; transform: translateY(-50%) scale(1.1); }
+        .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .prev-btn { left: 20px; }
+        .next-btn { right: 20px; }
+        .close-btn { position: absolute; top: 20px; right: 30px; color: #fff; font-size: 40px; font-weight: bold; cursor: pointer; z-index: 1002; }
+        .media-info { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); color: white; background-color: rgba(0,0,0,0.7); padding: 4px 12px; border-radius: 15px; font-size: 12px; z-index: 1002; pointer-events: none; }
+        .error { text-align: center; padding: 40px; color: #d32f2f; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <button id="viewTrashBtn">View Trash (0)</button>
+        <button id="backToGalleryBtn" class="hidden">Back to Gallery</button>
+        <div>
+            <label for="thumbnailWidth">Thumbnail Width:</label>
+            <input type="range" id="thumbnailWidth" min="100" max="400" value="250">
+        </div>
+        <div>
+            <input type="checkbox" id="autoTrashCheckbox">
+            <label for="autoTrashCheckbox">Auto-trash viewed files</label>
+        </div>
+    </div>
+
+    <div class="grid"></div>
+    <div class="trash-view hidden">
+        <h2>Trash</h2>
+        <div class="trash-controls">
+            <button id="generateDeleteScriptBtn">Generate Delete Script</button>
+            <textarea id="delete-script-output" readonly placeholder="Your delete script will appear here..."></textarea>
+        </div>
+        <div class="grid" id="trashGrid"></div>
+    </div>
+
+    <div id="undo-container" class="hidden">
+        <span>File moved to trash.</span>
+        <button id="undo-btn">Undo</button>
+    </div>
+
+    <div id="fullscreenOverlay" class="fullscreen-overlay">
+        <span class="close-btn">&times;</span>
+        <button class="nav-btn prev-btn" id="prevBtn">‹</button>
+        <button class="nav-btn next-btn" id="nextBtn">›</button>
+        <div class="fullscreen-content"></div>
+        <div class="media-info" id="mediaInfo"></div>
+    </div>
+
+    <script src="js/masonry.pkgd.min.js"></script>
+    <script src="js/imagesloaded.pkgd.min.js"></script>
+
+    <script>
+        // --- Injected by Python Script ---
+        const MEDIA_FILES = [];
+        const MEDIA_DATA = {};
+        // ------------------------------------
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // State
+            let allFiles = MEDIA_FILES.map(path => ({ id: path, url: MEDIA_DATA[path] }));
+            let visibleFiles = [];
+            let trashedFiles = [];
+            let currentView = 'gallery';
+            let masonry, trashMasonry;
+            let lastTrashedFile = null;
+            let undoTimeout = null;
+
+            // DOM Elements
+            const viewTrashBtn = document.getElementById('viewTrashBtn');
+            const backToGalleryBtn = document.getElementById('backToGalleryBtn');
+            const autoTrashCheckbox = document.getElementById('autoTrashCheckbox');
+            const mainGrid = document.querySelector('.grid');
+            const trashView = document.querySelector('.trash-view');
+            const trashGrid = document.getElementById('trashGrid');
+            const generateDeleteScriptBtn = document.getElementById('generateDeleteScriptBtn');
+            const deleteScriptOutput = document.getElementById('delete-script-output');
+            const undoContainer = document.getElementById('undo-container');
+            const undoBtn = document.getElementById('undo-btn');
+            const fullscreenOverlay = document.getElementById('fullscreenOverlay');
+            const fullscreenContent = document.querySelector('.fullscreen-content');
+            const closeFullscreenBtn = document.querySelector('.fullscreen-overlay .close-btn');
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            const mediaInfo = document.getElementById('mediaInfo');
+            const thumbnailWidthSlider = document.getElementById('thumbnailWidth');
+
+            const supportedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.mp4', '.webm', '.ogg'];
+
+            // --- Initialization ---
+            function initialize() {
+                const trashedIds = new Set(JSON.parse(localStorage.getItem('trashedFiles') || '[]'));
+                visibleFiles = allFiles.filter(f => !trashedIds.has(f.id));
+                trashedFiles = allFiles.filter(f => trashedIds.has(f.id));
+                updateTrashButton();
+                showGalleryView();
+            }
+
+            // --- Event Listeners ---
+            viewTrashBtn.addEventListener('click', showTrashView);
+            backToGalleryBtn.addEventListener('click', showGalleryView);
+            generateDeleteScriptBtn.addEventListener('click', generateDeleteScript);
+            undoBtn.addEventListener('click', undoLastTrash);
+            thumbnailWidthSlider.addEventListener('input', () => {
+                const msnry = currentView === 'gallery' ? masonry : trashMasonry;
+                if (msnry) {
+                    msnry.options.columnWidth = parseInt(thumbnailWidthSlider.value);
+                    msnry.layout();
+                }
+            });
+
+            // --- Core Functions ---
+            function renderGrid(container, files, isTrash) {
+                container.innerHTML = '';
+                let msnry = isTrash ? trashMasonry : masonry;
+                if (msnry) msnry.destroy();
+
+                if (files.length === 0) {
+                    container.innerHTML = `<div class="error">${isTrash ? 'Trash is empty.' : 'No media to display.'}</div>`;
+                    return;
+                }
+
+                const elements = files.map(fileObj => createGridItem(fileObj, isTrash));
+                container.append(...elements);
+
+                msnry = new Masonry(container, {
+                    itemSelector: '.grid-item',
+                    columnWidth: parseInt(thumbnailWidthSlider.value),
+                    gutter: 10,
+                    fitWidth: true,
+                });
+
+                imagesLoaded(container).on('progress', () => msnry.layout());
+                if (isTrash) trashMasonry = msnry;
+                else masonry = msnry;
+            }
+
+            function createGridItem(fileObj, isTrash) {
+                const gridItem = document.createElement('div');
+                gridItem.classList.add('grid-item');
+                gridItem.style.width = `${thumbnailWidthSlider.value}px`;
+                gridItem.dataset.id = fileObj.id;
+
+                const mediaElement = createMediaElement(fileObj);
+                const actionIcon = document.createElement('div');
+                actionIcon.classList.add('action-icon');
+
+                if (isTrash) {
+                    actionIcon.innerHTML = '&#128472;';
+                    actionIcon.title = 'Restore from trash';
+                    actionIcon.addEventListener('click', (e) => { e.stopPropagation(); restoreFromTrash(fileObj.id); });
+                } else {
+                    actionIcon.innerHTML = '&#128465;';
+                    actionIcon.title = 'Mark for deletion';
+                    actionIcon.addEventListener('click', (e) => { e.stopPropagation(); markForDeletion(fileObj.id); });
+                }
+
+                gridItem.appendChild(mediaElement);
+                gridItem.appendChild(actionIcon);
+                mediaElement.addEventListener('click', () => openFullscreen(fileObj));
+                return gridItem;
+            }
+
+            function createMediaElement(fileObj) {
+                const lowerFileName = fileObj.id.toLowerCase();
+                const isVideo = ['.mp4', '.webm', '.ogg'].some(ext => lowerFileName.endsWith(ext));
+                const mediaElement = isVideo ? document.createElement('video') : document.createElement('img');
+                if (isVideo) {
+                    mediaElement.autoplay = true;
+                    mediaElement.muted = true;
+                    mediaElement.loop = true;
+                }
+                mediaElement.src = fileObj.url;
+                return mediaElement;
+            }
+
+            function updateTrashPersistence() {
+                localStorage.setItem('trashedFiles', JSON.stringify(trashedFiles.map(f => f.id)));
+            }
+
+            function markForDeletion(fileId) {
+                const index = visibleFiles.findIndex(f => f.id === fileId);
+                if (index > -1) {
+                    lastTrashedFile = visibleFiles.splice(index, 1)[0];
+                    trashedFiles.push(lastTrashedFile);
+                    showUndo();
+                    showGalleryView();
+                    updateTrashButton();
+                    updateTrashPersistence();
+                }
+            }
+
+            function restoreFromTrash(fileId) {
+                const index = trashedFiles.findIndex(f => f.id === fileId);
+                if (index > -1) {
+                    const [fileToRestore] = trashedFiles.splice(index, 1);
+                    visibleFiles.push(fileToRestore);
+                    showTrashView();
+                    updateTrashButton();
+                    updateTrashPersistence();
+                }
+            }
+
+            function undoLastTrash() {
+                if (!lastTrashedFile) return;
+                restoreFromTrash(lastTrashedFile.id);
+                lastTrashedFile = null;
+                hideUndo();
+            }
+
+            function showUndo() {
+                clearTimeout(undoTimeout);
+                undoContainer.classList.remove('hidden');
+                undoTimeout = setTimeout(hideUndo, 5000);
+            }
+
+            function hideUndo() {
+                clearTimeout(undoTimeout);
+                undoContainer.classList.add('hidden');
+            }
+
+            function updateTrashButton() {
+                viewTrashBtn.textContent = `View Trash (${trashedFiles.length})`;
+            }
+
+            function showGalleryView() {
+                currentView = 'gallery';
+                mainGrid.classList.remove('hidden');
+                trashView.classList.add('hidden');
+                viewTrashBtn.classList.remove('hidden');
+                backToGalleryBtn.classList.add('hidden');
+                renderGrid(mainGrid, visibleFiles, false);
+            }
+
+            function showTrashView() {
+                currentView = 'trash';
+                mainGrid.classList.add('hidden');
+                trashView.classList.remove('hidden');
+                viewTrashBtn.classList.add('hidden');
+                backToGalleryBtn.classList.remove('hidden');
+                renderGrid(trashGrid, trashedFiles, true);
+            }
+
+            function generateDeleteScript() {
+                if (trashedFiles.length === 0) {
+                    deleteScriptOutput.value = "No files in trash to delete.";
+                    return;
+                }
+                const isWindows = navigator.platform.toLowerCase().includes('win');
+                const command = isWindows ? 'del' : 'rm';
+                const script = trashedFiles.map(f => `${command} "${f.id}"`).join('\n');
+                deleteScriptOutput.value = script;
+            }
+
+            // --- Fullscreen Logic ---
+            let currentMediaId = null, currentMediaIndex = -1, currentMediaList = [];
+
+            function openFullscreen(fileObj) {
+                currentMediaId = fileObj.id;
+                currentMediaList = (currentView === 'trash') ? trashedFiles : visibleFiles;
+                currentMediaIndex = currentMediaList.findIndex(f => f.id === fileObj.id);
+                const isVideo = ['.mp4', '.webm', '.ogg'].some(ext => fileObj.id.toLowerCase().endsWith(ext));
+
+                fullscreenContent.innerHTML = '';
+                const mediaElement = createMediaElement(fileObj);
+                if(isVideo) { mediaElement.autoplay = true; mediaElement.muted = false; mediaElement.controls = true; }
+                fullscreenContent.appendChild(mediaElement);
+                updateNavigationState();
+                fullscreenOverlay.classList.add('visible');
+
+                if (autoTrashCheckbox.checked && !trashedFiles.some(f => f.id === fileObj.id)) {
+                    setTimeout(() => { if (visibleFiles.some(f => f.id === fileObj.id)) markForDeletion(fileObj.id); }, 500);
+                }
+            }
+
+            closeFullscreenBtn.addEventListener('click', closeFullscreen);
+            prevBtn.addEventListener('click', () => navigateFullscreen(-1));
+            nextBtn.addEventListener('click', () => navigateFullscreen(1));
+            fullscreenOverlay.addEventListener('click', e => { if (e.target === fullscreenOverlay) closeFullscreen(); });
+
+            function navigateFullscreen(direction) {
+                const newIndex = currentMediaIndex + direction;
+                if (newIndex >= 0 && newIndex < currentMediaList.length) openFullscreen(currentMediaList[newIndex]);
+            }
+
+            function updateNavigationState() {
+                prevBtn.disabled = currentMediaIndex <= 0;
+                nextBtn.disabled = currentMediaIndex >= currentMediaList.length - 1;
+                const fileObj = currentMediaList[currentMediaIndex];
+                if (fileObj) mediaInfo.textContent = `${currentMediaIndex + 1} / ${currentMediaList.length} - ${fileObj.id.split(/[/\\]/).pop()}`;
+            }
+
+            function closeFullscreen() {
+                fullscreenOverlay.classList.remove('visible');
+                fullscreenContent.innerHTML = '';
+                currentMediaId = null;
+            }
+
+            initialize();
+        });
+    </script>
+</body>
+</html>
