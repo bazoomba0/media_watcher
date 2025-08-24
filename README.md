@@ -1,38 +1,19 @@
-# Local Media Gallery (Desktop Application)
+# Local Media Gallery Generator
 
-This is a simple desktop application to view and manage media files from a local folder on your computer.
-
-## Setup & Installation
-
-1.  **Prerequisites:** You must have [Node.js](https://nodejs.org/) installed on your system.
-2.  **Install Dependencies:** Open a terminal in the project directory and run the following command:
-    ```bash
-    npm install
-    ```
+This project contains a static HTML gallery and a Python script to generate its content from a local folder.
 
 ## How to Use
 
-1.  **Start the Application:** In your terminal, run:
+1.  **Prerequisites:** You need Python 3 installed on your system.
+2.  **Run the Generator Script:** Open a terminal in the project directory and run the following command:
     ```bash
-    npm start
+    python generate_gallery.py
     ```
-2.  **Select Your Media Folder:**
-    *   Click the "Select Media Folder" button.
-    *   In the native folder dialog that appears, choose the folder on your computer that contains your images and videos. All media from sub-folders will also be loaded.
+3.  **Enter Folder Path:** When prompted, paste the full path to the folder containing your media files and press Enter.
+4.  **View Your Gallery:** The script will overwrite `gallery.html` with your media. You can now open this file in your web browser to view the gallery.
 
-## Features
+## Notes
 
-### Marking Files for Deletion
-
--   To mark a file for deletion, hover over its thumbnail and click the trash can icon (&#128465;).
--   This does **not** immediately delete the file. It moves it to a temporary trash area within the application.
--   You can also check the "Auto-trash viewed files" box to automatically move any file to the trash after you view it in fullscreen.
-
-### Trash View & Permanent Deletion
-
-1.  **View Trashed Files:** Click the "View Trash" button at the top to see all the files you have marked for deletion.
-2.  **Restore Files:** In the trash view, you can restore a file by clicking the restore icon (&#128472;) on its thumbnail. This will move it back to the main gallery view.
-3.  **Permanently Delete Files:**
-    *   In the trash view, click the "Permanently Delete Trashed Files" button.
-    *   A native confirmation dialog will appear.
-    *   If you confirm, all files currently in the trash will be **permanently deleted** from your computer. **This action cannot be undone.**
+-   The generated `gallery.html` is a self-contained file that can be opened from anywhere on your computer.
+-   The paths to the media are absolute, so the `gallery.html` file will work as long as the media files are not moved.
+-   If you add or remove files from your media folder, simply run the script again to regenerate the gallery.
