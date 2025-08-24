@@ -14,7 +14,7 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile('gallery.html');
+  mainWindow.loadFile('index.html');
 
   // Open the DevTools for debugging.
   mainWindow.webContents.openDevTools();
@@ -61,17 +61,21 @@ ipcMain.handle('open-folder-dialog', async (event) => {
   return files;
 });
 
-ipcMain.handle('delete-files', async (event, filePaths) => {
-    const { response } = await dialog.showMessageBox({
-        type: 'warning',
-        buttons: ['Cancel', 'Delete'],
-        defaultId: 0,
-        title: 'Confirm Deletion',
-        message: `Are you sure you want to permanently delete ${filePaths.length} file(s)?`,
-        detail: 'This action cannot be undone.',
-    });
+ipcMain.handle('delete-files', async (event, { filePaths, confirm }) => {
+    let doDelete = true;
+    if (confirm) {
+        const { response } = await dialog.showMessageBox({
+            type: 'warning',
+            buttons: ['Cancel', 'Delete'],
+            defaultId: 0,
+            title: 'Confirm Deletion',
+            message: `Are you sure you want to permanently delete ${filePaths.length} file(s)?`,
+            detail: 'This action cannot be undone.',
+        });
+        doDelete = (response === 1); // User clicked "Delete"
+    }
 
-    if (response === 1) { // User clicked "Delete"
+    if (doDelete) {
         let deletedCount = 0;
         try {
             filePaths.forEach(filePath => {

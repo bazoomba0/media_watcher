@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home - Local Media Gallery</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            background-color: #f0f2f5;
+            color: #1c1e21;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            text-align: center;
+        }
+        .container {
+            background: #fff;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            width: 400px;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 30px;
+        }
+        .action-btn {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            font-size: 16px;
+            border-radius: 6px;
+            border: none;
+            background-color: #1877f2;
+            color: white;
+            cursor: pointer;
+            margin-bottom: 15px;
+            transition: background-color 0.2s;
+        }
+        .action-btn:hover {
+            background-color: #166fe5;
+        }
+        .action-btn.secondary {
+            background-color: #e4e6eb;
+            color: #4b4f56;
+        }
+        .action-btn.secondary:hover {
+            background-color: #dcdfe3;
+        }
+        .settings {
+            margin-top: 30px;
+            text-align: left;
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
+        }
+        .settings h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+        .setting-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .setting-item label {
+            margin-left: 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Media Gallery</h1>
+        <button id="select-folder-btn" class="action-btn">Select Media Folder</button>
+        <button id="view-trash-btn" class="action-btn secondary">View Trash</button>
+
+        <div class="settings">
+            <h2>Settings</h2>
+            <div class="setting-item">
+                <input type="checkbox" id="confirm-delete-checkbox" checked>
+                <label for="confirm-delete-checkbox">Confirm before permanently deleting files</label>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        const selectFolderBtn = document.getElementById('select-folder-btn');
+        const viewTrashBtn = document.getElementById('view-trash-btn');
+        const confirmDeleteCheckbox = document.getElementById('confirm-delete-checkbox');
+
+        // --- Settings Logic ---
+        // Load setting from localStorage on startup
+        const confirmDelete = localStorage.getItem('confirmDelete') !== 'false';
+        confirmDeleteCheckbox.checked = confirmDelete;
+
+        // Save setting to localStorage on change
+        confirmDeleteCheckbox.addEventListener('change', () => {
+            localStorage.setItem('confirmDelete', confirmDeleteCheckbox.checked);
+        });
+
+        // --- Button Logic ---
+        selectFolderBtn.addEventListener('click', async () => {
+            const folderPath = await ipcRenderer.invoke('open-folder-dialog');
+            if (folderPath && folderPath.length > 0) {
+                // Use sessionStorage to pass data to the next page
+                sessionStorage.setItem('mediaFolderPath', folderPath[0]);
+                sessionStorage.removeItem('viewMode'); // Ensure we are in gallery mode
+                window.location.href = 'gallery.html';
+            }
+        });
+
+        viewTrashBtn.addEventListener('click', () => {
+            // We need a folder context to view its trash.
+            // A better implementation might remember the last folder.
+            // For now, let's prompt the user if they haven't selected a folder yet.
+            const lastFolder = sessionStorage.getItem('mediaFolderPath');
+            if (!lastFolder) {
+                alert('Please select a media folder first to see its corresponding trash.');
+                return;
+            }
+            sessionStorage.setItem('viewMode', 'trash');
+            window.location.href = 'gallery.html';
+        });
+    </script>
+</body>
+</html>
