@@ -63,19 +63,24 @@ def generate_gallery():
     }
     media_data_js = json.dumps(media_data, indent=4)
 
-    # 5. Inject data into the template
-    # This regex looks for 'const MEDIA_FILES = [...]' and replaces the array content
+    # 5. Inject data into the template using a replacer function
+    # This is safer than f-strings for replacements that contain backslashes.
+    def replacer_files(match):
+        return f'{match.group(1)}{media_files_js}'
+
     content_with_files = re.sub(
-        r'(const MEDIA_FILES = )\[.*?\]',
-        f'\\1{media_files_js}',
+        r'(const MEDIA_FILES\s*=\s*)\[.*?\];',
+        replacer_files,
         template_content,
         flags=re.DOTALL
     )
 
-    # This regex looks for 'const MEDIA_DATA = {...}' and replaces the object content
+    def replacer_data(match):
+        return f'{match.group(1)}{media_data_js};'
+
     final_content = re.sub(
-        r'(const MEDIA_DATA = )\{.*?\}',
-        f'\\1{media_data_js}',
+        r'(const MEDIA_DATA\s*=\s*)\{.*?\}',
+        replacer_data,
         content_with_files,
         flags=re.DOTALL
     )
