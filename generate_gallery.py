@@ -2,6 +2,8 @@ import os
 import json
 import re
 import sys
+import tkinter as tk
+from tkinter import filedialog
 
 def get_all_files(dir_path):
     """Recursively get all file paths from a directory."""
@@ -14,12 +16,15 @@ def get_all_files(dir_path):
 def generate_gallery():
     """Main function to generate the gallery."""
 
-    # 1. Get folder path from user
-    folder_path = input("Please enter the full path to your media folder: ").strip()
+    # 1. Get folder path from user using a GUI file dialog
+    print("Opening folder picker...")
+    root = tk.Tk()
+    root.withdraw()  # Hide the main tkinter window
+    folder_path = filedialog.askdirectory(title="Select Your Media Folder")
 
-    if not os.path.isdir(folder_path):
-        print(f"Error: The path '{folder_path}' is not a valid directory.")
-        sys.exit(1)
+    if not folder_path:
+        print("No folder selected. Exiting.")
+        sys.exit(0)
 
     print(f"Scanning folder: {folder_path}...")
 

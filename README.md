@@ -9,7 +9,7 @@ This project contains a static HTML gallery and a Python script to generate its 
     ```bash
     python generate_gallery.py
     ```
-3.  **Enter Folder Path:** When prompted, paste the full path to the folder containing your media files and press Enter.
+3.  **Select Your Folder:** A folder picker window will appear. Navigate to and select the folder containing your media files.
 4.  **View Your Gallery:** The script will overwrite `gallery.html` with your media. You can now open this file in your web browser to view the gallery.
 
 ## Notes
